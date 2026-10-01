@@ -47,3 +47,11 @@ The package/dependency setup is kept based on the original v1.5 working project.
 - **Space / Ctrl** climb / dive.
 - **Shift** boost.
 - Dynamic wing flap, feather articulation, body banking, glide posture, aerial chase camera, speed FOV, wind particles, boost glow, and flight stamina are included.
+
+## v1.8.1 Flight Presentation Polish
+- Wings are now smaller, layered and feather-like instead of spike-shaped.
+- Feather tips and wing roots animate independently.
+- Glide mode opens the wings wider with calmer feather motion.
+- Boost increases wing cadence and emissive energy.
+- Folding wings no longer teleports the player to the ground; the character naturally falls back to street level.
+- Flight help now shows the full air-control scheme.
