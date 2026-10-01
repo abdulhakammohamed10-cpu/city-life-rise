@@ -1,4 +1,4 @@
-name: Deploy CITY LIFE: RISE to GitHub Pages
+name: "Deploy CITY LIFE: RISE to GitHub Pages"
 
 on:
   push:
