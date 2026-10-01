@@ -1565,7 +1565,7 @@ function WingedAvatar() {
 
     group.current.position.set(x, y - 1.35, z);
     group.current.visible = wingMemory.current > 0.02;
-    group.current.rotation.y = flightHeading.current;
+    group.current.rotation.y = look.yaw;
     group.current.rotation.z = -bank * 0.32;
     group.current.rotation.x = pitch * 0.22;
 
