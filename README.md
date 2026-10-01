@@ -30,3 +30,11 @@ npm run dev
 ```
 
 The package/dependency setup is kept based on the original v1.5 working project.
+
+## Flight Mode
+- Press **G** to deploy/fold the wings.
+- **W/A/S/D** steer through the air.
+- **Space** ascends.
+- **Ctrl** descends.
+- **Shift** boosts flight speed.
+- Flight uses the player's energy and automatically folds the wings when energy is depleted.
