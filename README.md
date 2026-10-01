@@ -38,3 +38,12 @@ The package/dependency setup is kept based on the original v1.5 working project.
 - **Ctrl** descends.
 - **Shift** boosts flight speed.
 - Flight uses the player's energy and automatically folds the wings when energy is depleted.
+
+## v1.8 Flight + Presentation Upgrade
+- **G** deploy/fold the wings.
+- **W/S** control forward speed and glide/braking.
+- **A/D** bank and steer in the air.
+- **Mouse** aims the flight direction.
+- **Space / Ctrl** climb / dive.
+- **Shift** boost.
+- Dynamic wing flap, feather articulation, body banking, glide posture, aerial chase camera, speed FOV, wind particles, boost glow, and flight stamina are included.
