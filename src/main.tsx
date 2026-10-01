@@ -29,6 +29,10 @@ type GameState = {
   playerY: number;
   playerZ: number;
   flying: boolean;
+  flightBank: number;
+  flightPitch: number;
+  flightSpeed: number;
+  flightBoost: boolean;
   toast: string;
   start: () => void;
   startCinematic: (name: Exclude<Cinematic, 'none'>) => void;
@@ -115,6 +119,10 @@ const useGame = create<GameState>((set, get) => ({
   playerY: 1.05,
   playerZ: 20,
   flying: false,
+  flightBank: 0,
+  flightPitch: 0,
+  flightSpeed: 0,
+  flightBoost: false,
   toast: '',
   inVehicle: false,
   vehicleX: VEHICLE_START.x,
@@ -145,20 +153,29 @@ const useGame = create<GameState>((set, get) => ({
     const loaded = Math.min(needed, s.weaponReserve);
     return { weaponAmmo: s.weaponAmmo + loaded, weaponReserve: s.weaponReserve - loaded, toast: 'Pulse pistol reloaded.' };
   }),
-  enterVehicle: () => set((s) => { resetVehicleRuntime(s.vehicleX, s.vehicleZ, s.vehicleYaw); return { inVehicle: true, flying: false, playerX: s.vehicleX, playerY: 1.05, playerZ: s.vehicleZ, phase: 'playing', cinematic: 'none', cinematicStartedAt: 0, vehicleSpeed: 0, vehicleSteer: 0, vehicleRoll: 0, vehiclePitch: 0, vehicleWheelAngle: 0, vehicleReverse: false, vehicleBrake: false, toast: 'Vehicle entered. W/S throttle • A/D steer • V camera • L lights' }; }),
+  enterVehicle: () => set((s) => { resetVehicleRuntime(s.vehicleX, s.vehicleZ, s.vehicleYaw); return { inVehicle: true, flying: false, flightBank: 0, flightPitch: 0, flightSpeed: 0, flightBoost: false, playerX: s.vehicleX, playerY: 1.05, playerZ: s.vehicleZ, phase: 'playing', cinematic: 'none', cinematicStartedAt: 0, vehicleSpeed: 0, vehicleSteer: 0, vehicleRoll: 0, vehiclePitch: 0, vehicleWheelAngle: 0, vehicleReverse: false, vehicleBrake: false, toast: 'Vehicle entered. W/S throttle • A/D steer • V camera • L lights' }; }),
   exitVehicle: () => set((s) => {
     const sideX = Math.cos(s.vehicleYaw);
     const sideZ = -Math.sin(s.vehicleYaw);
-    return { inVehicle: false, playerX: s.vehicleX - sideX * 1.8, playerZ: s.vehicleZ - sideZ * 1.8, vehicleSpeed: 0, vehicleSteer: 0, vehicleRoll: 0, vehiclePitch: 0, vehicleWheelAngle: 0, vehicleReverse: false, vehicleBrake: false, toast: 'Vehicle exited.' };
+    return { inVehicle: false, flying: false, flightBank: 0, flightPitch: 0, flightSpeed: 0, flightBoost: false, playerX: s.vehicleX - sideX * 1.8, playerZ: s.vehicleZ - sideZ * 1.8, vehicleSpeed: 0, vehicleSteer: 0, vehicleRoll: 0, vehiclePitch: 0, vehicleWheelAngle: 0, vehicleReverse: false, vehicleBrake: false, toast: 'Vehicle exited.' };
   }),
   toggleLights: () => set((s) => ({ lightsOn: !s.lightsOn, toast: s.lightsOn ? 'Headlights off.' : 'Headlights on.' })),
   toggleFlying: () => set((s) => {
     if (s.inVehicle || s.insideBuilding || s.phase !== 'playing') return s;
     const next = !s.flying;
-    return { flying: next, playerY: next ? Math.max(s.playerY, 4.2) : 1.05, energy: next ? s.energy : Math.max(s.energy, 30), toast: next ? 'WINGS DEPLOYED • G fly • SPACE up • CTRL down • SHIFT boost' : 'Wings folded. Back on the street.' };
+    return {
+      flying: next,
+      flightBank: 0,
+      flightPitch: 0,
+      flightSpeed: next ? 7.5 : 0,
+      flightBoost: false,
+      playerY: next ? Math.max(s.playerY, 5.2) : 1.05,
+      energy: next ? Math.max(s.energy, 12) : Math.max(s.energy, 30),
+      toast: next ? 'WINGS DEPLOYED • W/S speed • A/D bank • mouse aim • SPACE climb • CTRL dive • SHIFT boost' : 'Wings folded. Back on the street.',
+    };
   }),
   enterBuilding: () => set({ insideBuilding: true, buildingFloor: 0, playerX: ENTERABLE_BUILDING.x, playerZ: ENTERABLE_BUILDING.z - ENTERABLE_BUILDING.d / 2 + 2.4, toast: 'Apartment tower entered. Follow the staircase upstairs.' }),
-  exitBuilding: () => set({ insideBuilding: false, flying: false, buildingFloor: 0, playerY: 1.05, playerX: ENTERABLE_BUILDING.x, playerZ: ENTERABLE_BUILDING.z - ENTERABLE_BUILDING.d / 2 - 1.8, toast: 'Back outside.' }),
+  exitBuilding: () => set({ insideBuilding: false, flying: false, flightBank: 0, flightPitch: 0, flightSpeed: 0, flightBoost: false, buildingFloor: 0, playerY: 1.05, playerX: ENTERABLE_BUILDING.x, playerZ: ENTERABLE_BUILDING.z - ENTERABLE_BUILDING.d / 2 - 1.8, toast: 'Back outside.' }),
   start: () => set({ phase: 'playing', cinematic: 'none' }),
   startCinematic: (name) => set({ phase: 'cinematic', cinematic: name, cinematicStartedAt: performance.now() }),
   finishCinematic: () => set((s) => ({ phase: 'playing', cinematic: 'none', cinematicStartedAt: 0, toast: s.cinematic === 'arrival' ? 'Welcome to Downtown. Your story starts now.' : s.cinematic === 'enterVehicle' ? 'Drive to Harbor Hub. W/S throttle, A/D steer, SPACE handbrake.' : s.toast })),
@@ -415,6 +432,10 @@ function Player() {
   const landingKick = React.useRef(0);
   const wasGroundedRef = React.useRef(true);
   const playerFrameClock = React.useRef(0);
+  const flightHeading = React.useRef(look.yaw);
+  const flightVelocity = React.useRef(new THREE.Vector3());
+  const flightTransition = React.useRef(0);
+  const flightTime = React.useRef(0);
 
   useFrame((_, raw) => {
     activeCamera = camera;
@@ -569,50 +590,108 @@ function Player() {
     }
 
     if (s.flying) {
-      const fFly = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
-      const rFly = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
-      const ascend = (keys.has('Space') ? 1 : 0) - ((keys.has('ControlLeft') || keys.has('ControlRight')) ? 1 : 0);
+      const forwardInput = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
+      const bankInput = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+      const ascendInput = (keys.has('Space') ? 1 : 0) - ((keys.has('ControlLeft') || keys.has('ControlRight')) ? 1 : 0);
       const boost = keys.has('ShiftLeft') || keys.has('ShiftRight');
-      const inputLen = Math.hypot(fFly, rFly);
-      const maxAirSpeed = boost ? 18.5 : 12.0;
-      let dirX = 0; let dirZ = 0;
-      if (inputLen > 0) {
-        const nf = fFly / inputLen; const nr = rFly / inputLen;
-        dirX = -Math.sin(look.yaw) * nf + Math.cos(look.yaw) * nr;
-        dirZ = -Math.cos(look.yaw) * nf - Math.sin(look.yaw) * nr;
-      }
-      const airAccel = inputLen > 0 ? 7.5 : 5.5;
-      vel.current.x = THREE.MathUtils.damp(vel.current.x, dirX * maxAirSpeed, airAccel, dt);
-      vel.current.z = THREE.MathUtils.damp(vel.current.z, dirZ * maxAirSpeed, airAccel, dt);
-      vel.current.y = THREE.MathUtils.damp(vel.current.y, ascend * (boost ? 10 : 7.5), ascend !== 0 ? 7.5 : 4.5, dt);
+      const speedKmh = s.flightSpeed * 3.6;
+      const speedRatio = THREE.MathUtils.clamp(s.flightSpeed / 18.5, 0, 1);
 
-      pos.current.x = THREE.MathUtils.clamp(pos.current.x + vel.current.x * dt, -148, 148);
-      pos.current.z = THREE.MathUtils.clamp(pos.current.z + vel.current.z * dt, -148, 148);
-      pos.current.y = THREE.MathUtils.clamp(pos.current.y + vel.current.y * dt, 2.8, 95);
+      // Flight heading follows the mouse while A/D provides a controlled banking turn.
+      const steerTurn = bankInput * (0.72 + speedRatio * 1.25);
+      flightHeading.current += steerTurn * dt;
+      const headingError = THREE.MathUtils.euclideanModulo(look.yaw - flightHeading.current + Math.PI, Math.PI * 2) - Math.PI;
+      flightHeading.current += THREE.MathUtils.clamp(headingError, -0.8, 0.8) * Math.min(1, dt * 2.7);
 
-      const airSpeed = Math.hypot(vel.current.x, vel.current.z, vel.current.y);
-      const staminaDrain = dt * (boost ? 6.5 : 2.2);
+      const desiredBank = THREE.MathUtils.clamp(-bankInput * (0.22 + speedRatio * 0.45), -0.62, 0.62);
+      const cameraPitch = THREE.MathUtils.clamp(-look.pitch * 0.82, -0.62, 0.62);
+      const desiredPitch = THREE.MathUtils.clamp(cameraPitch + ascendInput * 0.34 - (forwardInput < 0 ? 0.12 : 0), -0.68, 0.68);
+
+      const targetCruise = boost ? 20.5 : 13.5;
+      const targetSpeed = forwardInput > 0 ? targetCruise : forwardInput < 0 ? 6.5 : 9.0;
+      const speedResponse = boost ? 6.2 : 5.0;
+      const oldSpeed = s.flightSpeed;
+      const nextSpeed = THREE.MathUtils.damp(oldSpeed, targetSpeed, speedResponse, dt);
+      const forward3D = new THREE.Vector3(
+        -Math.sin(flightHeading.current) * Math.cos(desiredPitch),
+        Math.sin(desiredPitch),
+        -Math.cos(flightHeading.current) * Math.cos(desiredPitch),
+      );
+      const bankSide = new THREE.Vector3(Math.cos(flightHeading.current), 0, -Math.sin(flightHeading.current));
+      const windLift = Math.max(0, nextSpeed - 8.5) * 0.06;
+      const liftTarget = THREE.MathUtils.clamp(Math.sin(desiredPitch) * nextSpeed + ascendInput * 3.5 + windLift, -8.5, 8.5);
+
+      flightVelocity.current.lerp(
+        new THREE.Vector3(forward3D.x * nextSpeed, liftTarget, forward3D.z * nextSpeed),
+        1 - Math.exp(-(boost ? 7.5 : 5.8) * dt),
+      );
+
+      const oldX = pos.current.x;
+      const oldY = pos.current.y;
+      const oldZ = pos.current.z;
+
+      pos.current.x = THREE.MathUtils.clamp(pos.current.x + flightVelocity.current.x * dt, -148, 148);
+      pos.current.y = THREE.MathUtils.clamp(pos.current.y + flightVelocity.current.y * dt, 3.0, 110);
+      pos.current.z = THREE.MathUtils.clamp(pos.current.z + flightVelocity.current.z * dt, -148, 148);
+
+      const actualVelocity = new THREE.Vector3(
+        (pos.current.x - oldX) / Math.max(dt, 0.001),
+        (pos.current.y - oldY) / Math.max(dt, 0.001),
+        (pos.current.z - oldZ) / Math.max(dt, 0.001),
+      );
+      const actualSpeed = actualVelocity.length();
+      const nextBank = THREE.MathUtils.damp(s.flightBank, desiredBank, 7.8, dt);
+      const nextPitch = THREE.MathUtils.damp(s.flightPitch, desiredPitch, 6.8, dt);
+
+      flightTransition.current = THREE.MathUtils.damp(flightTransition.current, 1, 6.5, dt);
+      flightTime.current += dt;
+
+      // Energy behaves like stamina: normal flight is sustainable, boosting is expensive.
+      const staminaDrain = dt * (boost ? 8.0 : 1.9 + speedRatio * 1.2);
       const nextEnergy = Math.max(0, s.energy - staminaDrain);
       if (nextEnergy <= 0) {
-        vel.current.set(0, 0, 0);
-        pos.current.y = 1.05;
-        useGame.setState({ flying: false, playerY: 1.05, energy: 0, toast: 'Flight energy depleted • wings folded.' });
+        flightVelocity.current.y = Math.min(-3.5, flightVelocity.current.y);
+        flightTime.current = 0;
+        useGame.setState({
+          flying: false,
+          flightBank: 0,
+          flightPitch: 0,
+          flightSpeed: 0,
+          flightBoost: false,
+          playerY: Math.max(1.05, pos.current.y - 2.2),
+          energy: 0,
+          toast: 'Flight energy depleted • emergency landing.',
+        });
         return;
       }
 
-      useGame.getState().tick(dt);
-      useGame.setState({ playerX: pos.current.x, playerY: pos.current.y, playerZ: pos.current.z, moving: airSpeed > 0.18, sprint: boost, energy: nextEnergy });
+      useGame.setState({
+        playerX: pos.current.x,
+        playerY: pos.current.y,
+        playerZ: pos.current.z,
+        moving: actualSpeed > 0.22,
+        sprint: boost,
+        energy: nextEnergy,
+        flightBank: nextBank,
+        flightPitch: nextPitch,
+        flightSpeed: THREE.MathUtils.damp(s.flightSpeed, actualSpeed, 8, dt),
+        flightBoost: boost,
+      });
 
-      smoothYaw.current = THREE.MathUtils.damp(smoothYaw.current, look.yaw, 14, dt);
-      smoothPitch.current = THREE.MathUtils.damp(smoothPitch.current, look.pitch, 12, dt);
-      headBob.current += dt * (4.5 + Math.min(7, airSpeed));
-      const flap = Math.sin(headBob.current * 1.6) * 0.02;
-      const cameraTarget = new THREE.Vector3(pos.current.x, pos.current.y + 1.2 + flap, pos.current.z);
-      const forwardAir = new THREE.Vector3(-Math.sin(look.yaw), 0, -Math.cos(look.yaw));
-      const chase = cameraTarget.clone().addScaledVector(forwardAir, 6.8 + airSpeed * 0.18).add(new THREE.Vector3(0, 2.8 + airSpeed * 0.06, 0));
-      camera.position.lerp(chase, 1 - Math.exp(-6.5 * dt));
-      camera.lookAt(cameraTarget);
-      camera.fov = THREE.MathUtils.damp(camera.fov, 69 + (boost ? 8 : airSpeed * 0.12), 5, dt);
+      smoothYaw.current = THREE.MathUtils.damp(smoothYaw.current, look.yaw, 10, dt);
+      smoothPitch.current = THREE.MathUtils.damp(smoothPitch.current, look.pitch, 10, dt);
+
+      // Cinematic aerial camera with responsive lag and speed-based FOV.
+      const cameraTarget = new THREE.Vector3(pos.current.x, pos.current.y + 1.0, pos.current.z);
+      const chaseOffset = forward3D.clone().multiplyScalar(-7.5 - actualSpeed * 0.16);
+      const cameraLift = new THREE.Vector3(0, 3.1 + actualSpeed * 0.055, 0);
+      const sideCamera = bankSide.clone().multiplyScalar(nextBank * 2.3);
+      const desiredCamera = cameraTarget.clone().add(chaseOffset).add(cameraLift).add(sideCamera);
+      camera.position.lerp(desiredCamera, 1 - Math.exp(-7.2 * dt));
+      const lookTarget = cameraTarget.clone().add(forward3D.clone().multiplyScalar(5 + actualSpeed * 0.12));
+      camera.lookAt(lookTarget);
+      camera.rotation.z = THREE.MathUtils.damp(camera.rotation.z, -nextBank * 0.92, 7.8, dt);
+      camera.fov = THREE.MathUtils.damp(camera.fov, 67.5 + actualSpeed * 0.27 + (boost ? 7 : 0), 5.5, dt);
       camera.updateProjectionMatrix();
       return;
     }
@@ -1442,33 +1521,153 @@ function WingedAvatar() {
   const x = useGame((s) => s.playerX);
   const y = useGame((s) => s.playerY);
   const z = useGame((s) => s.playerZ);
+  const speed = useGame((s) => s.flightSpeed);
+  const bank = useGame((s) => s.flightBank);
+  const pitch = useGame((s) => s.flightPitch);
+  const boost = useGame((s) => s.flightBoost);
   const group = React.useRef<THREE.Group>(null);
-  const left = React.useRef<THREE.Group>(null);
-  const right = React.useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  const leftRoot = React.useRef<THREE.Group>(null);
+  const rightRoot = React.useRef<THREE.Group>(null);
+  const leftFeathers = React.useRef<THREE.Group[]>([]);
+  const rightFeathers = React.useRef<THREE.Group[]>([]);
+  const body = React.useRef<THREE.Group>(null);
+  const glow = React.useRef<THREE.PointLight>(null);
+  const wingMemory = React.useRef(0);
+
+  const featherSet = (side: number, refs: React.MutableRefObject<THREE.Group[]>) => Array.from({ length: 9 }, (_, i) => {
+    const t = i / 8;
+    const root = React.createRef<THREE.Group>();
+    refs.current[i] = root.current as THREE.Group;
+    return <group key={i} ref={root} position={[side * (0.72 + t * 2.8), 0.05 + Math.sin(t * Math.PI) * 0.7, -0.05 + t * 0.15]} rotation-z={side * (-0.18 + t * 0.32)}>
+      <mesh castShadow>
+        <coneGeometry args={[0.27 + t * 0.1, 1.7 - t * 0.13, 7]} />
+        <meshStandardMaterial
+          color={i % 2 ? '#dceaff' : '#aecbff'}
+          emissive={boost ? '#4d8fcf' : '#3d5f8f'}
+          emissiveIntensity={boost ? 0.7 : 0.16}
+          roughness={0.42}
+          metalness={0.05}
+        />
+      </mesh>
+    </group>;
+  });
+
+  useFrame(({ clock }, dt) => {
     if (!group.current) return;
+    const target = flying ? 1 : 0;
+    wingMemory.current = THREE.MathUtils.damp(wingMemory.current, target, flying ? 10 : 7, dt);
     const t = clock.elapsedTime;
-    const flap = Math.sin(t * 7.2) * 0.28 + Math.sin(t * 3.3) * 0.08;
-    group.current.position.set(x, y - 1.45, z);
-    group.current.rotation.y = look.yaw;
-    group.current.visible = flying;
-    if (left.current) left.current.rotation.z = 0.16 + flap;
-    if (right.current) right.current.rotation.z = -0.16 - flap;
+    const speedRatio = THREE.MathUtils.clamp(speed / 18.5, 0, 1);
+    const flapRate = 4.8 + speedRatio * 4.6 + (boost ? 2.6 : 0);
+    const flap = Math.sin(t * flapRate) * (0.12 + (1 - speedRatio) * 0.28);
+    const secondary = Math.sin(t * flapRate * 0.5 + 0.9) * 0.08;
+    const gliding = speedRatio > 0.55 && Math.abs(flap) < 0.09;
+
+    group.current.position.set(x, y - 1.35, z);
+    group.current.visible = wingMemory.current > 0.02;
+    group.current.rotation.y = flightHeading.current;
+    group.current.rotation.z = -bank * 0.32;
+    group.current.rotation.x = pitch * 0.22;
+
+    if (body.current) {
+      body.current.rotation.z = THREE.MathUtils.damp(body.current.rotation.z, -bank * 0.18, 8, dt);
+      body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, pitch * 0.22, 8, dt);
+      body.current.position.y = 0.1 + Math.sin(t * flapRate * 0.5) * 0.035;
+    }
+
+    if (leftRoot.current) leftRoot.current.rotation.z = THREE.MathUtils.damp(leftRoot.current.rotation.z, wingMemory.current * (-0.1 + flap + secondary), 10, dt);
+    if (rightRoot.current) rightRoot.current.rotation.z = THREE.MathUtils.damp(rightRoot.current.rotation.z, wingMemory.current * (0.1 - flap - secondary), 10, dt);
+
+    leftFeathers.current.forEach((g, i) => {
+      if (!g) return;
+      const t2 = i / 8;
+      g.rotation.y = Math.sin(t * 2.0 + i * 0.45) * 0.025 + bank * 0.025 * t2;
+      g.rotation.x = (gliding ? 0.06 : 0.12 + flap * 0.32) * (1 - t2 * 0.25);
+    });
+    rightFeathers.current.forEach((g, i) => {
+      if (!g) return;
+      const t2 = i / 8;
+      g.rotation.y = Math.sin(t * 2.0 + i * 0.45 + 0.8) * 0.025 - bank * 0.025 * t2;
+      g.rotation.x = (gliding ? 0.06 : 0.12 - flap * 0.32) * (1 - t2 * 0.25);
+    });
+
+    if (glow.current) {
+      glow.current.intensity = boost ? 3.5 : 0.8;
+      glow.current.color.set(boost ? '#7cc7ff' : '#9fc8ff');
+    }
   });
-  const feathers = (side: number) => Array.from({ length: 7 }, (_, i) => {
-    const p = i / 6;
-    return <mesh key={i} position={[side * (0.75 + p * 2.25), 0.15 + Math.sin(p * Math.PI) * 0.55, 0]} rotation-z={side * (-0.22 + p * 0.38)}>
-      <coneGeometry args={[0.24 + p * 0.08, 1.65 - p * 0.15, 6]} />
-      <meshStandardMaterial color={i % 2 ? '#d9e7ff' : '#a9c8ff'} emissive="#5577aa" emissiveIntensity={0.12} roughness={0.48} />
-    </mesh>;
-  });
+
   return <group ref={group}>
-    <mesh position={[0, 1.1, 0]} castShadow><capsuleGeometry args={[0.3, 0.85, 4, 8] as any} /><meshStandardMaterial color="#d6dce2" metalness={0.08} roughness={0.52} /></mesh>
-    <mesh position={[0, 1.95, 0]} castShadow><sphereGeometry args={[0.28, 16, 12]} /><meshStandardMaterial color="#7a5138" roughness={0.72} /></mesh>
-    <group ref={left}>{feathers(-1)}</group>
-    <group ref={right}>{feathers(1)}</group>
-    <pointLight position={[0, 1.2, 0]} color="#8ac7ff" intensity={flying ? 1.0 : 0} distance={4} decay={2} />
+    <group ref={body}>
+      <mesh position={[0, 1.0, 0]} castShadow>
+        <capsuleGeometry args={[0.30, 0.88, 4, 10] as any} />
+        <meshStandardMaterial color="#d9e0e6" metalness={0.1} roughness={0.46} />
+      </mesh>
+      <mesh position={[0, 1.88, 0]} castShadow>
+        <sphereGeometry args={[0.29, 20, 14]} />
+        <meshStandardMaterial color="#7a5138" roughness={0.7} />
+      </mesh>
+      <mesh position={[0, 0.98, 0.25]} rotation-x={Math.PI / 2}>
+        <torusGeometry args={[0.27, 0.045, 10, 24]} />
+        <meshStandardMaterial color="#d4a85d" emissive="#765018" emissiveIntensity={0.32} />
+      </mesh>
+    </group>
+
+    <group ref={leftRoot}>{featherSet(-1, leftFeathers)}</group>
+    <group ref={rightRoot}>{featherSet(1, rightFeathers)}</group>
+
+    <group position={[0, 0.75, 0]}>
+      <mesh scale={[1, 0.62, 0.6]}>
+        <sphereGeometry args={[1.0, 16, 12]} />
+        <meshStandardMaterial color="#1a2f3b" transparent opacity={0.2} roughness={0.2} />
+      </mesh>
+    </group>
+    <pointLight ref={glow} position={[0, 1.2, 0]} color="#9fc8ff" intensity={1} distance={6} decay={2} />
   </group>;
+}
+
+function FlightFX() {
+  const flying = useGame((s) => s.flying);
+  const speed = useGame((s) => s.flightSpeed);
+  const boost = useGame((s) => s.flightBoost);
+  const x = useGame((s) => s.playerX);
+  const y = useGame((s) => s.playerY);
+  const z = useGame((s) => s.playerZ);
+  const points = React.useMemo(() => Array.from({ length: 54 }, (_, i) => ({
+    phase: i * 1.73,
+    radius: 0.8 + (i % 6) * 0.42,
+    height: (i % 9) - 4,
+  })), []);
+  const ref = React.useRef<THREE.Points>(null);
+  const geometry = React.useMemo(() => {
+    const arr = new Float32Array(points.length * 3);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    return g;
+  }, [points]);
+
+  useFrame((_, dt) => {
+    const positions = geometry.attributes.position.array as Float32Array;
+    const intensity = THREE.MathUtils.clamp(speed / 15, 0, 1);
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const phase = p.phase + performance.now() * 0.0012 * (1 + intensity * 2);
+      positions[i * 3] = Math.sin(phase * 1.7) * p.radius;
+      positions[i * 3 + 1] = p.height * 0.36 + Math.cos(phase * 1.2) * 0.3;
+      positions[i * 3 + 2] = 1.2 + ((i * 0.37 + phase * 2.6) % (4.5 + intensity * 3.5));
+    }
+    geometry.attributes.position.needsUpdate = true;
+    if (ref.current) {
+      ref.current.visible = flying && intensity > 0.22;
+      ref.current.position.set(x, y, z);
+      ref.current.rotation.y = look.yaw;
+      ref.current.scale.setScalar(boost ? 1.4 : 0.9 + intensity * 0.5);
+    }
+  });
+
+  return <points ref={ref} geometry={geometry}>
+    <pointsMaterial size={boost ? 0.07 : 0.045} color="#bfe4ff" transparent opacity={boost ? 0.58 : 0.26} depthWrite={false} blending={THREE.AdditiveBlending} />
+  </points>;
 }
 
 function VehicleRig() {
@@ -1641,6 +1840,7 @@ function World() {
     <VehicleMarker />
     <VehicleEntryGlow />
     <WingedAvatar />
+    <FlightFX />
     <WeaponShop />
     <WeaponMarker />
     <WeaponModel />
@@ -1690,7 +1890,7 @@ function CombatPulseOverlay() {
 }
 
 function HUD() {
-  const { phase, energy, moving, sprint, cash, xp, reputation, level, mission, playerX, playerY, playerZ, toast, inVehicle, vehicleX, vehicleZ, vehicleSpeed, vehicleView, vehicleCondition, fuel, lightsOn, weaponOwned, weaponAmmo, weaponReserve, kills, insideBuilding, buildingFloor, flying } = useGame((s) => s);
+  const { phase, energy, moving, sprint, cash, xp, reputation, level, mission, playerX, playerY, playerZ, toast, inVehicle, vehicleX, vehicleZ, vehicleSpeed, vehicleView, vehicleCondition, fuel, lightsOn, weaponOwned, weaponAmmo, weaponReserve, kills, insideBuilding, buildingFloor, flying, flightSpeed, flightBank, flightBoost } = useGame((s) => s);
   const target = mission === 'deliver' || mission === 'complete' ? DELIVERY : EMPLOYMENT;
   const distance = Math.max(0, Math.round(Math.hypot((inVehicle ? vehicleX : playerX) - target.x, (inVehicle ? vehicleZ : playerZ) - target.z)));
   const vehicleDistance = Math.max(0, Math.round(Math.hypot(playerX - vehicleX, playerZ - vehicleZ)));
@@ -1716,7 +1916,7 @@ function HUD() {
     <Crosshair className="cross" size={24} />
     {useGame((s) => s.hitMarker) && <div className="hitMarker">✦</div>}
     <CombatPulseOverlay />
-    <div className="bottomLeft"><div className="meter"><div><Heart size={14} /> HEALTH <b>100</b></div><span><i style={{ width: '100%' }} /></span></div><div className="meter"><div><Zap size={14} /> ENERGY <b>{Math.round(energy)}</b></div><span><i style={{ width: `${energy}%` }} /></span></div><div className={`mode ${inVehicle ? "modeVehicle" : ""}`}>{inVehicle ? <><CarFront size={16} /> DRIVE <b>{vehicleSpeed} km/h</b><span>{vehicleSpeed < 1 ? "P" : "D"}</span><span>FUEL {Math.round(useGame.getState().fuel)}%</span><span>V {vehicleView === "third" ? "THIRD" : "FIRST"}</span></> : flying ? <><Sparkles size={16} /> FLIGHT <b>{Math.round(playerY)}m</b><span>{sprint ? "BOOST" : "CRUISE"}</span></> : <><Footprints size={16} /> {moving ? (sprint ? "SPRINT" : "WALK") : "IDLE"}</>}</div>{inVehicle && <div className="driveAssist"><b className="steerKey steerLeft">A</b><span>LEFT</span><i className="steerWheelHint" style={{ transform: `rotate(${useGame.getState().vehicleSteer * 34}deg)` }}>◜</i><i className="steerWheelHint steerWheelHint--right" style={{ transform: `rotate(${useGame.getState().vehicleSteer * 34}deg) scaleX(-1)` }}>◝</i><b className="steerKey steerRight">D</b><span>RIGHT</span><small>STEERING INPUT / WHEEL VISUAL</small></div>}</div>
+    <div className="bottomLeft"><div className="meter"><div><Heart size={14} /> HEALTH <b>100</b></div><span><i style={{ width: '100%' }} /></span></div><div className="meter"><div><Zap size={14} /> ENERGY <b>{Math.round(energy)}</b></div><span><i style={{ width: `${energy}%` }} /></span></div><div className={`mode ${inVehicle ? "modeVehicle" : ""}`}>{inVehicle ? <><CarFront size={16} /> DRIVE <b>{vehicleSpeed} km/h</b><span>{vehicleSpeed < 1 ? "P" : "D"}</span><span>FUEL {Math.round(useGame.getState().fuel)}%</span><span>V {vehicleView === "third" ? "THIRD" : "FIRST"}</span></> : flying ? <><Sparkles size={16} /> FLIGHT <b>{Math.round(flightSpeed * 3.6)} km/h</b><span>ALT {Math.round(playerY)}m</span><span>{flightBoost ? "BOOST" : Math.abs(flightBank) > 0.22 ? "BANK" : "GLIDE"}</span></> : <><Footprints size={16} /> {moving ? (sprint ? "SPRINT" : "WALK") : "IDLE"}</>}</div>{inVehicle && <div className="driveAssist"><b className="steerKey steerLeft">A</b><span>LEFT</span><i className="steerWheelHint" style={{ transform: `rotate(${useGame.getState().vehicleSteer * 34}deg)` }}>◜</i><i className="steerWheelHint steerWheelHint--right" style={{ transform: `rotate(${useGame.getState().vehicleSteer * 34}deg) scaleX(-1)` }}>◝</i><b className="steerKey steerRight">D</b><span>RIGHT</span><small>STEERING INPUT / WHEEL VISUAL</small></div>}</div>
     {weaponOwned && !inVehicle && <div className="weaponHUD"><div className="weaponHUD__title"><Target size={14}/> PULSE PISTOL</div><strong>{weaponAmmo}</strong><span>/ {weaponReserve}</span><small>FREE • LMB / F FIRE • R RELOAD</small><em>{kills} KILLS</em></div>}
     {inVehicle && <div className="vehicleHUD">
       <div className="vehicleHUD__top"><div><small>SPEED</small><strong>{vehicleSpeed}</strong><span>KM/H</span></div><div><small>GEAR</small><strong>{vehicleSpeed < 1 ? 'P' : (keys.has('KeyS') && vehicleSpeed < 2 ? 'R' : 'D')}</strong></div></div>
