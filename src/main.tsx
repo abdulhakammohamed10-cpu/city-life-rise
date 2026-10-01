@@ -169,7 +169,7 @@ const useGame = create<GameState>((set, get) => ({
       flightPitch: 0,
       flightSpeed: next ? 7.5 : 0,
       flightBoost: false,
-      playerY: next ? Math.max(s.playerY, 5.2) : 1.05,
+      playerY: next ? Math.max(s.playerY, 5.2) : s.playerY,
       energy: next ? Math.max(s.energy, 12) : Math.max(s.energy, 30),
       toast: next ? 'WINGS DEPLOYED • W/S speed • A/D bank • mouse aim • SPACE climb • CTRL dive • SHIFT boost' : 'Wings folded. Back on the street.',
     };
@@ -1525,108 +1525,134 @@ function WingedAvatar() {
   const bank = useGame((s) => s.flightBank);
   const pitch = useGame((s) => s.flightPitch);
   const boost = useGame((s) => s.flightBoost);
+
   const group = React.useRef<THREE.Group>(null);
+  const body = React.useRef<THREE.Group>(null);
   const leftRoot = React.useRef<THREE.Group>(null);
   const rightRoot = React.useRef<THREE.Group>(null);
-  const leftFeathers = React.useRef<THREE.Group[]>([]);
-  const rightFeathers = React.useRef<THREE.Group[]>([]);
-  const body = React.useRef<THREE.Group>(null);
-  const glow = React.useRef<THREE.PointLight>(null);
-  const wingMemory = React.useRef(0);
-
-  const featherSet = (side: number, refs: React.MutableRefObject<THREE.Group[]>) => Array.from({ length: 9 }, (_, i) => {
-    const t = i / 8;
-    return <group
-      key={i}
-      ref={(node) => { if (node) refs.current[i] = node; }}
-      position={[side * (0.72 + t * 2.8), 0.05 + Math.sin(t * Math.PI) * 0.7, -0.05 + t * 0.15]}
-      rotation-z={side * (-0.18 + t * 0.32)}
-    >
-      <mesh castShadow>
-        <coneGeometry args={[0.27 + t * 0.1, 1.7 - t * 0.13, 7]} />
-        <meshStandardMaterial
-          color={i % 2 ? '#dceaff' : '#aecbff'}
-          emissive={boost ? '#4d8fcf' : '#3d5f8f'}
-          emissiveIntensity={boost ? 0.7 : 0.16}
-          roughness={0.42}
-          metalness={0.05}
-        />
-      </mesh>
-    </group>;
-  });
+  const leftRefs = React.useRef<THREE.Group[]>([]);
+  const rightRefs = React.useRef<THREE.Group[]>([]);
+  const wingAlpha = React.useRef(0);
 
   useFrame(({ clock }, dt) => {
     if (!group.current) return;
-    const target = flying ? 1 : 0;
-    wingMemory.current = THREE.MathUtils.damp(wingMemory.current, target, flying ? 10 : 7, dt);
-    const t = clock.elapsedTime;
-    const speedRatio = THREE.MathUtils.clamp(speed / 18.5, 0, 1);
-    const flapRate = 4.8 + speedRatio * 4.6 + (boost ? 2.6 : 0);
-    const flap = Math.sin(t * flapRate) * (0.12 + (1 - speedRatio) * 0.28);
-    const secondary = Math.sin(t * flapRate * 0.5 + 0.9) * 0.08;
-    const gliding = speedRatio > 0.55 && Math.abs(flap) < 0.09;
 
-    group.current.position.set(x, y - 1.35, z);
-    group.current.visible = wingMemory.current > 0.02;
+    const speedRatio = THREE.MathUtils.clamp(speed / 18.5, 0, 1);
+    const targetAlpha = flying ? 1 : 0;
+    wingAlpha.current = THREE.MathUtils.damp(wingAlpha.current, targetAlpha, flying ? 9.5 : 6.5, dt);
+
+    const flapRate = 4.2 + speedRatio * 4.5 + (boost ? 2.2 : 0);
+    const flap = Math.sin(clock.elapsedTime * flapRate) * (0.08 + (1 - speedRatio) * 0.22);
+    const featherWave = Math.sin(clock.elapsedTime * flapRate * 0.52 + 0.6) * 0.06;
+    const gliding = speedRatio > 0.58;
+
+    group.current.visible = wingAlpha.current > 0.015;
+    group.current.position.set(x, y - 1.25, z);
     group.current.rotation.y = look.yaw;
-    group.current.rotation.z = -bank * 0.32;
-    group.current.rotation.x = pitch * 0.22;
+    group.current.rotation.x = pitch * 0.10;
+    group.current.rotation.z = -bank * 0.14;
 
     if (body.current) {
-      body.current.rotation.z = THREE.MathUtils.damp(body.current.rotation.z, -bank * 0.18, 8, dt);
-      body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, pitch * 0.22, 8, dt);
-      body.current.position.y = 0.1 + Math.sin(t * flapRate * 0.5) * 0.035;
+      body.current.rotation.x = pitch * 0.16;
+      body.current.rotation.z = -bank * 0.10;
+      body.current.position.y = Math.sin(clock.elapsedTime * 3.3) * 0.025;
     }
 
-    if (leftRoot.current) leftRoot.current.rotation.z = THREE.MathUtils.damp(leftRoot.current.rotation.z, wingMemory.current * (-0.1 + flap + secondary), 10, dt);
-    if (rightRoot.current) rightRoot.current.rotation.z = THREE.MathUtils.damp(rightRoot.current.rotation.z, wingMemory.current * (0.1 - flap - secondary), 10, dt);
-
-    leftFeathers.current.forEach((g, i) => {
-      if (!g) return;
-      const t2 = i / 8;
-      g.rotation.y = Math.sin(t * 2.0 + i * 0.45) * 0.025 + bank * 0.025 * t2;
-      g.rotation.x = (gliding ? 0.06 : 0.12 + flap * 0.32) * (1 - t2 * 0.25);
-    });
-    rightFeathers.current.forEach((g, i) => {
-      if (!g) return;
-      const t2 = i / 8;
-      g.rotation.y = Math.sin(t * 2.0 + i * 0.45 + 0.8) * 0.025 - bank * 0.025 * t2;
-      g.rotation.x = (gliding ? 0.06 : 0.12 - flap * 0.32) * (1 - t2 * 0.25);
-    });
-
-    if (glow.current) {
-      glow.current.intensity = boost ? 3.5 : 0.8;
-      glow.current.color.set(boost ? '#7cc7ff' : '#9fc8ff');
+    const rootOpen = wingAlpha.current * (0.56 + (gliding ? 0.13 : 0) + flap * 0.45);
+    if (leftRoot.current) {
+      leftRoot.current.rotation.z = THREE.MathUtils.damp(leftRoot.current.rotation.z, rootOpen, 10, dt);
+      leftRoot.current.rotation.x = THREE.MathUtils.damp(leftRoot.current.rotation.x, flap * 0.33, 10, dt);
     }
+    if (rightRoot.current) {
+      rightRoot.current.rotation.z = THREE.MathUtils.damp(rightRoot.current.rotation.z, -rootOpen, 10, dt);
+      rightRoot.current.rotation.x = THREE.MathUtils.damp(rightRoot.current.rotation.x, -flap * 0.33, 10, dt);
+    }
+
+    [...leftRefs.current, ...rightRefs.current].forEach((feather, i) => {
+      if (!feather) return;
+      const local = i % 9;
+      const t = local / 8;
+      const side = i < 9 ? -1 : 1;
+      feather.rotation.x = THREE.MathUtils.damp(
+        feather.rotation.x,
+        (gliding ? 0.02 : flap * (0.24 - t * 0.10)) + featherWave * (1 - t),
+        9,
+        dt,
+      );
+      feather.rotation.y = side * (-0.10 + t * 0.08);
+    });
   });
 
-  return <group ref={group}>
-    <group ref={body}>
-      <mesh position={[0, 1.0, 0]} castShadow>
-        <capsuleGeometry args={[0.30, 0.88, 4, 10] as any} />
-        <meshStandardMaterial color="#d9e0e6" metalness={0.1} roughness={0.46} />
-      </mesh>
-      <mesh position={[0, 1.88, 0]} castShadow>
-        <sphereGeometry args={[0.29, 20, 14]} />
-        <meshStandardMaterial color="#7a5138" roughness={0.7} />
-      </mesh>
-      <mesh position={[0, 0.98, 0.25]} rotation-x={Math.PI / 2}>
-        <torusGeometry args={[0.27, 0.045, 10, 24]} />
-        <meshStandardMaterial color="#d4a85d" emissive="#765018" emissiveIntensity={0.32} />
-      </mesh>
-    </group>
+  const featherSet = (side: number, refs: React.MutableRefObject<THREE.Group[]>) =>
+    Array.from({ length: 9 }, (_, i) => {
+      const t = i / 8;
+      const length = 1.10 + t * 0.72;
+      const spread = 0.64 + t * 3.20;
+      const root = React.createRef<THREE.Group>();
 
-    <group ref={leftRoot}>{featherSet(-1, leftFeathers)}</group>
-    <group ref={rightRoot}>{featherSet(1, rightFeathers)}</group>
+      return (
+        <group
+          key={i}
+          ref={(node) => { if (node) refs.current[i] = node; }}
+          position={[
+            side * spread,
+            0.10 + Math.sin(t * Math.PI) * 0.55,
+            0.16 + t * 0.28,
+          ]}
+          rotation-z={side * (0.18 + t * 0.18)}
+          rotation-x={-0.18}
+        >
+          <mesh castShadow>
+            <capsuleGeometry args={[0.16 + t * 0.035, length, 5, 10] as any} />
+            <meshStandardMaterial
+              color={i % 2 ? '#e5efff' : '#b8d2f2'}
+              emissive={boost ? '#4f92cb' : '#425d7e'}
+              emissiveIntensity={boost ? 0.85 : 0.14}
+              roughness={0.42}
+              metalness={0.06}
+            />
+          </mesh>
+          <mesh position={[0, length * 0.56, 0]}>
+            <sphereGeometry args={[0.10 + t * 0.025, 8, 6]} />
+            <meshStandardMaterial
+              color={i % 2 ? '#f5f9ff' : '#c9def7'}
+              emissive={boost ? '#77caff' : '#53739a'}
+              emissiveIntensity={boost ? 0.95 : 0.08}
+            />
+          </mesh>
+        </group>
+      );
+    });
 
-    <group position={[0, 0.75, 0]}>
-      <mesh scale={[1, 0.62, 0.6]}>
-        <sphereGeometry args={[1.0, 16, 12]} />
-        <meshStandardMaterial color="#1a2f3b" transparent opacity={0.2} roughness={0.2} />
-      </mesh>
+  return (
+    <group ref={group}>
+      <group ref={body}>
+        <mesh position={[0, 1.0, 0]} castShadow>
+          <capsuleGeometry args={[0.28, 0.82, 4, 10] as any} />
+          <meshStandardMaterial color="#d7dfe7" metalness={0.12} roughness={0.45} />
+        </mesh>
+        <mesh position={[0, 1.83, 0]} castShadow>
+          <sphereGeometry args={[0.27, 20, 14]} />
+          <meshStandardMaterial color="#7a5138" roughness={0.70} />
+        </mesh>
+        <mesh position={[0, 0.92, 0.18]} rotation-x={Math.PI / 2}>
+          <torusGeometry args={[0.25, 0.04, 10, 24]} />
+          <meshStandardMaterial color="#d9b86d" metalness={0.68} roughness={0.24} emissive="#7a5b1d" emissiveIntensity={0.25} />
+        </mesh>
+      </group>
+
+      <group ref={leftRoot}>{featherSet(-1, leftRefs)}</group>
+      <group ref={rightRoot}>{featherSet(1, rightRefs)}</group>
+
+      <pointLight
+        position={[0, 1.15, 0]}
+        color={boost ? '#7bc9ff' : '#9cc8ff'}
+        intensity={boost ? 2.6 : 0.65}
+        distance={5.5}
+        decay={2}
+      />
     </group>
-    <pointLight ref={glow} position={[0, 1.2, 0]} color="#9fc8ff" intensity={1} distance={6} decay={2} />
-  </group>;
+  );
 }
 
 function FlightFX() {
@@ -1915,7 +1941,7 @@ function HUD() {
     <div className="brand"><div>CITY LIFE <b>RISE</b></div><span>METROPOLIS // DAY 01</span></div>
     <div className="topstats"><div><small>LEVEL</small><strong>{String(level).padStart(2, '0')}</strong><span className="xpMini">{xp}/100 XP</span></div><div><small>CASH</small><strong>${cash}</strong></div><div><small>REPUTATION</small><strong>{reputation}</strong></div></div>
     <div className="objective"><div className="objIcon">{mission === 'deliver' ? <Package size={18}/> : <BriefcaseBusiness size={18} />}</div><div><small>CURRENT OBJECTIVE</small><h3>{missionTitle}</h3><p>{missionText}</p></div><div className="distance"><MapPin size={14} />{distance}m</div></div>
-    <div className="hintChip">{flying ? <><Sparkles size={13}/> G FOLD WINGS • SPACE UP • CTRL DOWN • SHIFT BOOST</> : insideBuilding && nearBuildingDoor ? <><DoorOpen size={13}/> PRESS E TO EXIT BUILDING</> : insideBuilding ? <><Building2 size={13}/> FLOOR {buildingFloor + 1} &nbsp; • &nbsp; FOLLOW THE STAIRCASE</> : nearBuildingDoor ? <><DoorOpen size={13}/> PRESS E TO ENTER APARTMENT TOWER</> : nearWeaponShop && !weaponOwned ? <><Shield size={13}/> PRESS E TO CLAIM FREE PULSE PISTOL</> : weaponOwned && !inVehicle ? <><Target size={13}/> LEFT CLICK / F FIRE &nbsp; • &nbsp; R RELOAD</> : near && mission === 'visit' ? <><DoorOpen size={13}/> PRESS E TO CHECK IN</> : mission === 'deliver' && inVehicle && near ? <><Package size={13}/> PRESS E TO DELIVER</> : mission === 'deliver' && !inVehicle && nearVehicle ? <><CarFront size={13}/> PRESS E / ENTER TO GET IN THE VAN</> : inVehicle ? <><Navigation size={13}/> DRIVE TO HARBOR HUB &nbsp; • &nbsp; E EXIT &nbsp; • &nbsp; L LIGHTS</> : mission === 'complete' ? <><Sparkles size={13}/> MISSION COMPLETE</> : <><Navigation size={13} /> FOLLOW THE GOLD MARKER</>}</div>
+    <div className="hintChip">{flying ? <><Sparkles size={13}/> G WINGS • W/S SPEED • A/D BANK • MOUSE AIM • SPACE UP • CTRL DOWN • SHIFT BOOST</> : insideBuilding && nearBuildingDoor ? <><DoorOpen size={13}/> PRESS E TO EXIT BUILDING</> : insideBuilding ? <><Building2 size={13}/> FLOOR {buildingFloor + 1} &nbsp; • &nbsp; FOLLOW THE STAIRCASE</> : nearBuildingDoor ? <><DoorOpen size={13}/> PRESS E TO ENTER APARTMENT TOWER</> : nearWeaponShop && !weaponOwned ? <><Shield size={13}/> PRESS E TO CLAIM FREE PULSE PISTOL</> : weaponOwned && !inVehicle ? <><Target size={13}/> LEFT CLICK / F FIRE &nbsp; • &nbsp; R RELOAD</> : near && mission === 'visit' ? <><DoorOpen size={13}/> PRESS E TO CHECK IN</> : mission === 'deliver' && inVehicle && near ? <><Package size={13}/> PRESS E TO DELIVER</> : mission === 'deliver' && !inVehicle && nearVehicle ? <><CarFront size={13}/> PRESS E / ENTER TO GET IN THE VAN</> : inVehicle ? <><Navigation size={13}/> DRIVE TO HARBOR HUB &nbsp; • &nbsp; E EXIT &nbsp; • &nbsp; L LIGHTS</> : mission === 'complete' ? <><Sparkles size={13}/> MISSION COMPLETE</> : <><Navigation size={13} /> FOLLOW THE GOLD MARKER</>}</div>
     <Crosshair className="cross" size={24} />
     {useGame((s) => s.hitMarker) && <div className="hitMarker">✦</div>}
     <CombatPulseOverlay />
