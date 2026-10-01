@@ -1536,9 +1536,12 @@ function WingedAvatar() {
 
   const featherSet = (side: number, refs: React.MutableRefObject<THREE.Group[]>) => Array.from({ length: 9 }, (_, i) => {
     const t = i / 8;
-    const root = React.createRef<THREE.Group>();
-    refs.current[i] = root.current as THREE.Group;
-    return <group key={i} ref={root} position={[side * (0.72 + t * 2.8), 0.05 + Math.sin(t * Math.PI) * 0.7, -0.05 + t * 0.15]} rotation-z={side * (-0.18 + t * 0.32)}>
+    return <group
+      key={i}
+      ref={(node) => { if (node) refs.current[i] = node; }}
+      position={[side * (0.72 + t * 2.8), 0.05 + Math.sin(t * Math.PI) * 0.7, -0.05 + t * 0.15]}
+      rotation-z={side * (-0.18 + t * 0.32)}
+    >
       <mesh castShadow>
         <coneGeometry args={[0.27 + t * 0.1, 1.7 - t * 0.13, 7]} />
         <meshStandardMaterial
