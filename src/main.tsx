@@ -26,7 +26,9 @@ type GameState = {
   level: number;
   mission: MissionStage;
   playerX: number;
+  playerY: number;
   playerZ: number;
+  flying: boolean;
   toast: string;
   start: () => void;
   startCinematic: (name: Exclude<Cinematic, 'none'>) => void;
@@ -66,6 +68,7 @@ type GameState = {
   enterVehicle: () => void;
   exitVehicle: () => void;
   toggleLights: () => void;
+  toggleFlying: () => void;
   insideBuilding: boolean;
   buildingFloor: number;
   enterBuilding: () => void;
@@ -109,7 +112,9 @@ const useGame = create<GameState>((set, get) => ({
   level: 1,
   mission: 'visit',
   playerX: -9,
+  playerY: 1.05,
   playerZ: 20,
+  flying: false,
   toast: '',
   inVehicle: false,
   vehicleX: VEHICLE_START.x,
@@ -140,15 +145,20 @@ const useGame = create<GameState>((set, get) => ({
     const loaded = Math.min(needed, s.weaponReserve);
     return { weaponAmmo: s.weaponAmmo + loaded, weaponReserve: s.weaponReserve - loaded, toast: 'Pulse pistol reloaded.' };
   }),
-  enterVehicle: () => set((s) => { resetVehicleRuntime(s.vehicleX, s.vehicleZ, s.vehicleYaw); return { inVehicle: true, playerX: s.vehicleX, playerZ: s.vehicleZ, phase: 'playing', cinematic: 'none', cinematicStartedAt: 0, vehicleSpeed: 0, vehicleSteer: 0, vehicleRoll: 0, vehiclePitch: 0, vehicleWheelAngle: 0, vehicleReverse: false, vehicleBrake: false, toast: 'Vehicle entered. W/S throttle • A/D steer • V camera • L lights' }; }),
+  enterVehicle: () => set((s) => { resetVehicleRuntime(s.vehicleX, s.vehicleZ, s.vehicleYaw); return { inVehicle: true, flying: false, playerX: s.vehicleX, playerY: 1.05, playerZ: s.vehicleZ, phase: 'playing', cinematic: 'none', cinematicStartedAt: 0, vehicleSpeed: 0, vehicleSteer: 0, vehicleRoll: 0, vehiclePitch: 0, vehicleWheelAngle: 0, vehicleReverse: false, vehicleBrake: false, toast: 'Vehicle entered. W/S throttle • A/D steer • V camera • L lights' }; }),
   exitVehicle: () => set((s) => {
     const sideX = Math.cos(s.vehicleYaw);
     const sideZ = -Math.sin(s.vehicleYaw);
     return { inVehicle: false, playerX: s.vehicleX - sideX * 1.8, playerZ: s.vehicleZ - sideZ * 1.8, vehicleSpeed: 0, vehicleSteer: 0, vehicleRoll: 0, vehiclePitch: 0, vehicleWheelAngle: 0, vehicleReverse: false, vehicleBrake: false, toast: 'Vehicle exited.' };
   }),
   toggleLights: () => set((s) => ({ lightsOn: !s.lightsOn, toast: s.lightsOn ? 'Headlights off.' : 'Headlights on.' })),
+  toggleFlying: () => set((s) => {
+    if (s.inVehicle || s.insideBuilding || s.phase !== 'playing') return s;
+    const next = !s.flying;
+    return { flying: next, playerY: next ? Math.max(s.playerY, 4.2) : 1.05, energy: next ? s.energy : Math.max(s.energy, 30), toast: next ? 'WINGS DEPLOYED • G fly • SPACE up • CTRL down • SHIFT boost' : 'Wings folded. Back on the street.' };
+  }),
   enterBuilding: () => set({ insideBuilding: true, buildingFloor: 0, playerX: ENTERABLE_BUILDING.x, playerZ: ENTERABLE_BUILDING.z - ENTERABLE_BUILDING.d / 2 + 2.4, toast: 'Apartment tower entered. Follow the staircase upstairs.' }),
-  exitBuilding: () => set({ insideBuilding: false, buildingFloor: 0, playerX: ENTERABLE_BUILDING.x, playerZ: ENTERABLE_BUILDING.z - ENTERABLE_BUILDING.d / 2 - 1.8, toast: 'Back outside.' }),
+  exitBuilding: () => set({ insideBuilding: false, flying: false, buildingFloor: 0, playerY: 1.05, playerX: ENTERABLE_BUILDING.x, playerZ: ENTERABLE_BUILDING.z - ENTERABLE_BUILDING.d / 2 - 1.8, toast: 'Back outside.' }),
   start: () => set({ phase: 'playing', cinematic: 'none' }),
   startCinematic: (name) => set({ phase: 'cinematic', cinematic: name, cinematicStartedAt: performance.now() }),
   finishCinematic: () => set((s) => ({ phase: 'playing', cinematic: 'none', cinematicStartedAt: 0, toast: s.cinematic === 'arrival' ? 'Welcome to Downtown. Your story starts now.' : s.cinematic === 'enterVehicle' ? 'Drive to Harbor Hub. W/S throttle, A/D steer, SPACE handbrake.' : s.toast })),
@@ -232,6 +242,10 @@ function Input({ root }: { root: React.RefObject<HTMLDivElement | null> }) {
       }
       if (e.code === 'KeyV' && !e.repeat && s.phase === 'playing' && s.inVehicle) {
         s.toggleVehicleView();
+        return;
+      }
+      if (e.code === 'KeyG' && !e.repeat && s.phase === 'playing' && !s.inVehicle && !s.insideBuilding) {
+        s.toggleFlying();
         return;
       }
       if (e.code === 'KeyL' && !e.repeat && s.phase === 'playing' && s.inVehicle) {
@@ -543,6 +557,7 @@ function Player() {
 
     if (wasInVehicle.current) {
       pos.current.x = s.vehicleX;
+      pos.current.y = 1.05;
       pos.current.z = s.vehicleZ;
       vel.current.set(0, 0, 0);
       carVelocity.current.set(0, 0, 0);
@@ -551,6 +566,50 @@ function Player() {
       previousForwardSpeed.current = 0;
       brakeCameraKick.current = 0;
       wasInVehicle.current = false;
+    }
+
+    if (s.flying) {
+      const fFly = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
+      const rFly = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+      const ascend = (keys.has('Space') ? 1 : 0) - ((keys.has('ControlLeft') || keys.has('ControlRight')) ? 1 : 0);
+      const boost = keys.has('ShiftLeft') || keys.has('ShiftRight');
+      const inputLen = Math.hypot(fFly, rFly);
+      const maxAirSpeed = boost ? 18.5 : 12.0;
+      let dirX = 0; let dirZ = 0;
+      if (inputLen > 0) {
+        const nf = fFly / inputLen; const nr = rFly / inputLen;
+        dirX = -Math.sin(look.yaw) * nf + Math.cos(look.yaw) * nr;
+        dirZ = -Math.cos(look.yaw) * nf - Math.sin(look.yaw) * nr;
+      }
+      const airAccel = inputLen > 0 ? 7.5 : 5.5;
+      vel.current.x = THREE.MathUtils.damp(vel.current.x, dirX * maxAirSpeed, airAccel, dt);
+      vel.current.z = THREE.MathUtils.damp(vel.current.z, dirZ * maxAirSpeed, airAccel, dt);
+      vel.current.y = THREE.MathUtils.damp(vel.current.y, ascend * (boost ? 10 : 7.5), ascend !== 0 ? 7.5 : 4.5, dt);
+
+      pos.current.x = THREE.MathUtils.clamp(pos.current.x + vel.current.x * dt, -148, 148);
+      pos.current.z = THREE.MathUtils.clamp(pos.current.z + vel.current.z * dt, -148, 148);
+      pos.current.y = THREE.MathUtils.clamp(pos.current.y + vel.current.y * dt, 2.8, 95);
+
+      const airSpeed = Math.hypot(vel.current.x, vel.current.z, vel.current.y);
+      const staminaDrain = dt * (boost ? 6.5 : 2.2);
+      const nextEnergy = Math.max(0, s.energy - staminaDrain);
+      if (nextEnergy <= 0) useGame.getState().toggleFlying();
+
+      useGame.getState().tick(dt);
+      useGame.setState({ playerX: pos.current.x, playerY: pos.current.y, playerZ: pos.current.z, moving: airSpeed > 0.18, sprint: boost, energy: nextEnergy });
+
+      smoothYaw.current = THREE.MathUtils.damp(smoothYaw.current, look.yaw, 14, dt);
+      smoothPitch.current = THREE.MathUtils.damp(smoothPitch.current, look.pitch, 12, dt);
+      headBob.current += dt * (4.5 + Math.min(7, airSpeed));
+      const flap = Math.sin(headBob.current * 1.6) * 0.02;
+      const cameraTarget = new THREE.Vector3(pos.current.x, pos.current.y + 1.2 + flap, pos.current.z);
+      const forwardAir = new THREE.Vector3(-Math.sin(look.yaw), 0, -Math.cos(look.yaw));
+      const chase = cameraTarget.clone().addScaledVector(forwardAir, 6.8 + airSpeed * 0.18).add(new THREE.Vector3(0, 2.8 + airSpeed * 0.06, 0));
+      camera.position.lerp(chase, 1 - Math.exp(-6.5 * dt));
+      camera.lookAt(cameraTarget);
+      camera.fov = THREE.MathUtils.damp(camera.fov, 69 + (boost ? 8 : airSpeed * 0.12), 5, dt);
+      camera.updateProjectionMatrix();
+      return;
     }
 
     // Interior movement: lock the player to the active floor while allowing smooth stair climbing.
@@ -630,7 +689,7 @@ function Player() {
     // Keep the authoritative player position synchronized with the smooth local controller.
     // The previous build only moved the camera/physics position, so interaction checks
     // (especially entering the van) continued using the original spawn coordinates.
-    useGame.setState({ moving, sprint, playerX: pos.current.x, playerZ: pos.current.z });
+    useGame.setState({ moving, sprint, playerX: pos.current.x, playerY: pos.current.y, playerZ: pos.current.z });
     useGame.getState().tick(dt);
 
     smoothYaw.current = THREE.MathUtils.damp(smoothYaw.current, look.yaw, 22, dt);
@@ -1373,6 +1432,40 @@ function WeaponModel() {
   return null;
 }
 
+function WingedAvatar() {
+  const flying = useGame((s) => s.flying);
+  const x = useGame((s) => s.playerX);
+  const y = useGame((s) => s.playerY);
+  const z = useGame((s) => s.playerZ);
+  const group = React.useRef<THREE.Group>(null);
+  const left = React.useRef<THREE.Group>(null);
+  const right = React.useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    if (!group.current) return;
+    const t = clock.elapsedTime;
+    const flap = Math.sin(t * 7.2) * 0.28 + Math.sin(t * 3.3) * 0.08;
+    group.current.position.set(x, y - 1.45, z);
+    group.current.rotation.y = look.yaw;
+    group.current.visible = flying;
+    if (left.current) left.current.rotation.z = 0.16 + flap;
+    if (right.current) right.current.rotation.z = -0.16 - flap;
+  });
+  const feathers = (side: number) => Array.from({ length: 7 }, (_, i) => {
+    const p = i / 6;
+    return <mesh key={i} position={[side * (0.75 + p * 2.25), 0.15 + Math.sin(p * Math.PI) * 0.55, 0]} rotation-z={side * (-0.22 + p * 0.38)}>
+      <coneGeometry args={[0.24 + p * 0.08, 1.65 - p * 0.15, 6]} />
+      <meshStandardMaterial color={i % 2 ? '#d9e7ff' : '#a9c8ff'} emissive="#5577aa" emissiveIntensity={0.12} roughness={0.48} />
+    </mesh>;
+  });
+  return <group ref={group}>
+    <mesh position={[0, 1.1, 0]} castShadow><capsuleGeometry args={[0.3, 0.85, 4, 8] as any} /><meshStandardMaterial color="#d6dce2" metalness={0.08} roughness={0.52} /></mesh>
+    <mesh position={[0, 1.95, 0]} castShadow><sphereGeometry args={[0.28, 16, 12]} /><meshStandardMaterial color="#7a5138" roughness={0.72} /></mesh>
+    <group ref={left}>{feathers(-1)}</group>
+    <group ref={right}>{feathers(1)}</group>
+    <pointLight position={[0, 1.2, 0]} color="#8ac7ff" intensity={flying ? 1.0 : 0} distance={4} decay={2} />
+  </group>;
+}
+
 function VehicleRig() {
   const ref = React.useRef<THREE.Group>(null);
   useFrame(() => {
@@ -1542,6 +1635,7 @@ function World() {
     {mission === 'deliver' ? <DeliveryMarker /> : null}
     <VehicleMarker />
     <VehicleEntryGlow />
+    <WingedAvatar />
     <WeaponShop />
     <WeaponMarker />
     <WeaponModel />
@@ -1591,7 +1685,7 @@ function CombatPulseOverlay() {
 }
 
 function HUD() {
-  const { phase, energy, moving, sprint, cash, xp, reputation, level, mission, playerX, playerZ, toast, inVehicle, vehicleX, vehicleZ, vehicleSpeed, vehicleView, vehicleCondition, fuel, lightsOn, weaponOwned, weaponAmmo, weaponReserve, kills, insideBuilding, buildingFloor } = useGame((s) => s);
+  const { phase, energy, moving, sprint, cash, xp, reputation, level, mission, playerX, playerY, playerZ, toast, inVehicle, vehicleX, vehicleZ, vehicleSpeed, vehicleView, vehicleCondition, fuel, lightsOn, weaponOwned, weaponAmmo, weaponReserve, kills, insideBuilding, buildingFloor, flying } = useGame((s) => s);
   const target = mission === 'deliver' || mission === 'complete' ? DELIVERY : EMPLOYMENT;
   const distance = Math.max(0, Math.round(Math.hypot((inVehicle ? vehicleX : playerX) - target.x, (inVehicle ? vehicleZ : playerZ) - target.z)));
   const vehicleDistance = Math.max(0, Math.round(Math.hypot(playerX - vehicleX, playerZ - vehicleZ)));
@@ -1613,11 +1707,11 @@ function HUD() {
     <div className="brand"><div>CITY LIFE <b>RISE</b></div><span>METROPOLIS // DAY 01</span></div>
     <div className="topstats"><div><small>LEVEL</small><strong>{String(level).padStart(2, '0')}</strong><span className="xpMini">{xp}/100 XP</span></div><div><small>CASH</small><strong>${cash}</strong></div><div><small>REPUTATION</small><strong>{reputation}</strong></div></div>
     <div className="objective"><div className="objIcon">{mission === 'deliver' ? <Package size={18}/> : <BriefcaseBusiness size={18} />}</div><div><small>CURRENT OBJECTIVE</small><h3>{missionTitle}</h3><p>{missionText}</p></div><div className="distance"><MapPin size={14} />{distance}m</div></div>
-    <div className="hintChip">{insideBuilding && nearBuildingDoor ? <><DoorOpen size={13}/> PRESS E TO EXIT BUILDING</> : insideBuilding ? <><Building2 size={13}/> FLOOR {buildingFloor + 1} &nbsp; • &nbsp; FOLLOW THE STAIRCASE</> : nearBuildingDoor ? <><DoorOpen size={13}/> PRESS E TO ENTER APARTMENT TOWER</> : nearWeaponShop && !weaponOwned ? <><Shield size={13}/> PRESS E TO CLAIM FREE PULSE PISTOL</> : weaponOwned && !inVehicle ? <><Target size={13}/> LEFT CLICK / F FIRE &nbsp; • &nbsp; R RELOAD</> : near && mission === 'visit' ? <><DoorOpen size={13}/> PRESS E TO CHECK IN</> : mission === 'deliver' && inVehicle && near ? <><Package size={13}/> PRESS E TO DELIVER</> : mission === 'deliver' && !inVehicle && nearVehicle ? <><CarFront size={13}/> PRESS E / ENTER TO GET IN THE VAN</> : inVehicle ? <><Navigation size={13}/> DRIVE TO HARBOR HUB &nbsp; • &nbsp; E EXIT &nbsp; • &nbsp; L LIGHTS</> : mission === 'complete' ? <><Sparkles size={13}/> MISSION COMPLETE</> : <><Navigation size={13} /> FOLLOW THE GOLD MARKER</>}</div>
+    <div className="hintChip">{flying ? <><Sparkles size={13}/> G FOLD WINGS • SPACE UP • CTRL DOWN • SHIFT BOOST</> : insideBuilding && nearBuildingDoor ? <><DoorOpen size={13}/> PRESS E TO EXIT BUILDING</> : insideBuilding ? <><Building2 size={13}/> FLOOR {buildingFloor + 1} &nbsp; • &nbsp; FOLLOW THE STAIRCASE</> : nearBuildingDoor ? <><DoorOpen size={13}/> PRESS E TO ENTER APARTMENT TOWER</> : nearWeaponShop && !weaponOwned ? <><Shield size={13}/> PRESS E TO CLAIM FREE PULSE PISTOL</> : weaponOwned && !inVehicle ? <><Target size={13}/> LEFT CLICK / F FIRE &nbsp; • &nbsp; R RELOAD</> : near && mission === 'visit' ? <><DoorOpen size={13}/> PRESS E TO CHECK IN</> : mission === 'deliver' && inVehicle && near ? <><Package size={13}/> PRESS E TO DELIVER</> : mission === 'deliver' && !inVehicle && nearVehicle ? <><CarFront size={13}/> PRESS E / ENTER TO GET IN THE VAN</> : inVehicle ? <><Navigation size={13}/> DRIVE TO HARBOR HUB &nbsp; • &nbsp; E EXIT &nbsp; • &nbsp; L LIGHTS</> : mission === 'complete' ? <><Sparkles size={13}/> MISSION COMPLETE</> : <><Navigation size={13} /> FOLLOW THE GOLD MARKER</>}</div>
     <Crosshair className="cross" size={24} />
     {useGame((s) => s.hitMarker) && <div className="hitMarker">✦</div>}
     <CombatPulseOverlay />
-    <div className="bottomLeft"><div className="meter"><div><Heart size={14} /> HEALTH <b>100</b></div><span><i style={{ width: '100%' }} /></span></div><div className="meter"><div><Zap size={14} /> ENERGY <b>{Math.round(energy)}</b></div><span><i style={{ width: `${energy}%` }} /></span></div><div className={`mode ${inVehicle ? "modeVehicle" : ""}`}>{inVehicle ? <><CarFront size={16} /> DRIVE <b>{vehicleSpeed} km/h</b><span>{vehicleSpeed < 1 ? "P" : "D"}</span><span>FUEL {Math.round(useGame.getState().fuel)}%</span><span>V {vehicleView === "third" ? "THIRD" : "FIRST"}</span></> : <><Footprints size={16} /> {moving ? (sprint ? "SPRINT" : "WALK") : "IDLE"}</>}</div>{inVehicle && <div className="driveAssist"><b className="steerKey steerLeft">A</b><span>LEFT</span><i className="steerWheelHint" style={{ transform: `rotate(${useGame.getState().vehicleSteer * 34}deg)` }}>◜</i><i className="steerWheelHint steerWheelHint--right" style={{ transform: `rotate(${useGame.getState().vehicleSteer * 34}deg) scaleX(-1)` }}>◝</i><b className="steerKey steerRight">D</b><span>RIGHT</span><small>STEERING INPUT / WHEEL VISUAL</small></div>}</div>
+    <div className="bottomLeft"><div className="meter"><div><Heart size={14} /> HEALTH <b>100</b></div><span><i style={{ width: '100%' }} /></span></div><div className="meter"><div><Zap size={14} /> ENERGY <b>{Math.round(energy)}</b></div><span><i style={{ width: `${energy}%` }} /></span></div><div className={`mode ${inVehicle ? "modeVehicle" : ""}`}>{inVehicle ? <><CarFront size={16} /> DRIVE <b>{vehicleSpeed} km/h</b><span>{vehicleSpeed < 1 ? "P" : "D"}</span><span>FUEL {Math.round(useGame.getState().fuel)}%</span><span>V {vehicleView === "third" ? "THIRD" : "FIRST"}</span></> : flying ? <><Sparkles size={16} /> FLIGHT <b>{Math.round(playerY)}m</b><span>{sprint ? "BOOST" : "CRUISE"}</span></> : <><Footprints size={16} /> {moving ? (sprint ? "SPRINT" : "WALK") : "IDLE"}</>}</div>{inVehicle && <div className="driveAssist"><b className="steerKey steerLeft">A</b><span>LEFT</span><i className="steerWheelHint" style={{ transform: `rotate(${useGame.getState().vehicleSteer * 34}deg)` }}>◜</i><i className="steerWheelHint steerWheelHint--right" style={{ transform: `rotate(${useGame.getState().vehicleSteer * 34}deg) scaleX(-1)` }}>◝</i><b className="steerKey steerRight">D</b><span>RIGHT</span><small>STEERING INPUT / WHEEL VISUAL</small></div>}</div>
     {weaponOwned && !inVehicle && <div className="weaponHUD"><div className="weaponHUD__title"><Target size={14}/> PULSE PISTOL</div><strong>{weaponAmmo}</strong><span>/ {weaponReserve}</span><small>FREE • LMB / F FIRE • R RELOAD</small><em>{kills} KILLS</em></div>}
     {inVehicle && <div className="vehicleHUD">
       <div className="vehicleHUD__top"><div><small>SPEED</small><strong>{vehicleSpeed}</strong><span>KM/H</span></div><div><small>GEAR</small><strong>{vehicleSpeed < 1 ? 'P' : (keys.has('KeyS') && vehicleSpeed < 2 ? 'R' : 'D')}</strong></div></div>
