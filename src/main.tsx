@@ -1530,129 +1530,190 @@ function WingedAvatar() {
   const body = React.useRef<THREE.Group>(null);
   const leftRoot = React.useRef<THREE.Group>(null);
   const rightRoot = React.useRef<THREE.Group>(null);
-  const leftRefs = React.useRef<THREE.Group[]>([]);
-  const rightRefs = React.useRef<THREE.Group[]>([]);
-  const wingAlpha = React.useRef(0);
+  const leftFeathers = React.useRef<THREE.Group[]>([]);
+  const rightFeathers = React.useRef<THREE.Group[]>([]);
+  const alpha = React.useRef(0);
+
+  const featherShape = React.useMemo(() => {
+    const sh = new THREE.Shape();
+    sh.moveTo(0, 0);
+    sh.quadraticCurveTo(0.18, 0.18, 0.42, 0.55);
+    sh.quadraticCurveTo(0.72, 1.12, 0.44, 1.82);
+    sh.quadraticCurveTo(0.12, 1.42, -0.02, 0.85);
+    sh.quadraticCurveTo(-0.08, 0.34, 0, 0);
+    return sh;
+  }, []);
+
+  const Feather = ({ index, side, refs }: {
+    index: number;
+    side: number;
+    refs: React.MutableRefObject<THREE.Group[]>;
+  }) => {
+    const t = index / 7;
+    const root = React.useRef<THREE.Group>(null);
+    React.useEffect(() => {
+      if (root.current) refs.current[index] = root.current;
+    }, [index, refs]);
+
+    const span = 0.65 + t * 3.05;
+    const lift = 0.05 + Math.sin(t * Math.PI) * 0.5;
+    const size = 0.95 + t * 0.32;
+    return (
+      <group
+        ref={root}
+        position={[side * span, lift, 0.14 + t * 0.34]}
+        rotation-z={side * (0.20 + t * 0.16)}
+        rotation-y={side * (0.08 + t * 0.07)}
+        scale={[side * size, size, size]}
+      >
+        <mesh castShadow>
+          <shapeGeometry args={[featherShape]} />
+          <meshStandardMaterial
+            color={index % 2 ? '#eaf2ff' : '#bfd5ef'}
+            emissive={boost ? '#4f96d4' : '#435f80'}
+            emissiveIntensity={boost ? 0.72 : 0.10}
+            roughness={0.50}
+            metalness={0.02}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        <mesh position={[0.18, 0.82, 0.01]} rotation-z={Math.PI / 2} scale={[1, 0.55, 1]}>
+          <boxGeometry args={[0.035, 1.15, 0.028]} />
+          <meshStandardMaterial color="#718daa" transparent opacity={0.48} />
+        </mesh>
+      </group>
+    );
+  };
 
   useFrame(({ clock }, dt) => {
     if (!group.current) return;
 
     const speedRatio = THREE.MathUtils.clamp(speed / 18.5, 0, 1);
-    const targetAlpha = flying ? 1 : 0;
-    wingAlpha.current = THREE.MathUtils.damp(wingAlpha.current, targetAlpha, flying ? 9.5 : 6.5, dt);
+    const target = flying ? 1 : 0;
+    alpha.current = THREE.MathUtils.damp(alpha.current, target, flying ? 10 : 7, dt);
 
-    const flapRate = 4.2 + speedRatio * 4.5 + (boost ? 2.2 : 0);
-    const flap = Math.sin(clock.elapsedTime * flapRate) * (0.08 + (1 - speedRatio) * 0.22);
-    const featherWave = Math.sin(clock.elapsedTime * flapRate * 0.52 + 0.6) * 0.06;
-    const gliding = speedRatio > 0.58;
+    const flapRate = 3.8 + speedRatio * 3.8 + (boost ? 2.6 : 0);
+    const flap = Math.sin(clock.elapsedTime * flapRate) * (0.10 + (1 - speedRatio) * 0.25);
+    const featherWave = Math.sin(clock.elapsedTime * flapRate * 0.65 + 0.9) * 0.06;
+    const gliding = speedRatio > 0.60;
 
-    group.current.visible = wingAlpha.current > 0.015;
-    group.current.position.set(x, y - 1.25, z);
+    group.current.visible = alpha.current > 0.01;
+    group.current.position.set(x, y - 1.18, z);
     group.current.rotation.y = look.yaw;
-    group.current.rotation.x = pitch * 0.10;
-    group.current.rotation.z = -bank * 0.14;
+    group.current.rotation.x = pitch * 0.12;
+    group.current.rotation.z = -bank * 0.16;
 
     if (body.current) {
-      body.current.rotation.x = pitch * 0.16;
-      body.current.rotation.z = -bank * 0.10;
-      body.current.position.y = Math.sin(clock.elapsedTime * 3.3) * 0.025;
+      body.current.rotation.x = pitch * 0.18;
+      body.current.rotation.z = -bank * 0.11;
+      body.current.position.y = Math.sin(clock.elapsedTime * 3.1) * 0.025;
     }
 
-    const rootOpen = wingAlpha.current * (0.56 + (gliding ? 0.13 : 0) + flap * 0.45);
+    const wingOpen = alpha.current * (0.72 + (gliding ? 0.28 : 0) + flap * 0.34);
     if (leftRoot.current) {
-      leftRoot.current.rotation.z = THREE.MathUtils.damp(leftRoot.current.rotation.z, rootOpen, 10, dt);
-      leftRoot.current.rotation.x = THREE.MathUtils.damp(leftRoot.current.rotation.x, flap * 0.33, 10, dt);
+      leftRoot.current.rotation.z = THREE.MathUtils.damp(leftRoot.current.rotation.z, wingOpen, 9.5, dt);
+      leftRoot.current.rotation.x = THREE.MathUtils.damp(leftRoot.current.rotation.x, flap * 0.18, 9.5, dt);
     }
     if (rightRoot.current) {
-      rightRoot.current.rotation.z = THREE.MathUtils.damp(rightRoot.current.rotation.z, -rootOpen, 10, dt);
-      rightRoot.current.rotation.x = THREE.MathUtils.damp(rightRoot.current.rotation.x, -flap * 0.33, 10, dt);
+      rightRoot.current.rotation.z = THREE.MathUtils.damp(rightRoot.current.rotation.z, -wingOpen, 9.5, dt);
+      rightRoot.current.rotation.x = THREE.MathUtils.damp(rightRoot.current.rotation.x, -flap * 0.18, 9.5, dt);
     }
 
-    [...leftRefs.current, ...rightRefs.current].forEach((feather, i) => {
+    const all = [...leftFeathers.current, ...rightFeathers.current];
+    all.forEach((feather, i) => {
       if (!feather) return;
-      const local = i % 9;
-      const t = local / 8;
-      const side = i < 9 ? -1 : 1;
-      feather.rotation.x = THREE.MathUtils.damp(
-        feather.rotation.x,
-        (gliding ? 0.02 : flap * (0.24 - t * 0.10)) + featherWave * (1 - t),
-        9,
-        dt,
-      );
-      feather.rotation.y = side * (-0.10 + t * 0.08);
+      const local = i % 8;
+      const edge = local / 7;
+      const side = i < 8 ? -1 : 1;
+      const desiredX = gliding
+        ? 0.035 + featherWave * (1 - edge) * 0.3
+        : flap * (0.24 - edge * 0.11) + featherWave * (1 - edge);
+      feather.rotation.x = THREE.MathUtils.damp(feather.rotation.x, desiredX, 8.5, dt);
+      feather.rotation.y = THREE.MathUtils.damp(feather.rotation.y, side * (0.05 + edge * 0.08), 8.5, dt);
     });
   });
 
-  const featherSet = (side: number, refs: React.MutableRefObject<THREE.Group[]>) =>
-    Array.from({ length: 9 }, (_, i) => {
-      const t = i / 8;
-      const length = 1.10 + t * 0.72;
-      const spread = 0.64 + t * 3.20;
-      const root = React.createRef<THREE.Group>();
-
-      return (
-        <group
-          key={i}
-          ref={(node) => { if (node) refs.current[i] = node; }}
-          position={[
-            side * spread,
-            0.10 + Math.sin(t * Math.PI) * 0.55,
-            0.16 + t * 0.28,
-          ]}
-          rotation-z={side * (0.18 + t * 0.18)}
-          rotation-x={-0.18}
-        >
-          <mesh castShadow>
-            <capsuleGeometry args={[0.16 + t * 0.035, length, 5, 10] as any} />
-            <meshStandardMaterial
-              color={i % 2 ? '#e5efff' : '#b8d2f2'}
-              emissive={boost ? '#4f92cb' : '#425d7e'}
-              emissiveIntensity={boost ? 0.85 : 0.14}
-              roughness={0.42}
-              metalness={0.06}
-            />
-          </mesh>
-          <mesh position={[0, length * 0.56, 0]}>
-            <sphereGeometry args={[0.10 + t * 0.025, 8, 6]} />
-            <meshStandardMaterial
-              color={i % 2 ? '#f5f9ff' : '#c9def7'}
-              emissive={boost ? '#77caff' : '#53739a'}
-              emissiveIntensity={boost ? 0.95 : 0.08}
-            />
-          </mesh>
-        </group>
-      );
-    });
+  const featherList = (side: number, refs: React.MutableRefObject<THREE.Group[]>) =>
+    Array.from({ length: 8 }, (_, i) => (
+      <Feather key={i} index={i} side={side} refs={refs} />
+    ));
 
   return (
     <group ref={group}>
       <group ref={body}>
         <mesh position={[0, 1.0, 0]} castShadow>
           <capsuleGeometry args={[0.28, 0.82, 4, 10] as any} />
-          <meshStandardMaterial color="#d7dfe7" metalness={0.12} roughness={0.45} />
+          <meshStandardMaterial color="#d8e0e8" metalness={0.10} roughness={0.46} />
         </mesh>
-        <mesh position={[0, 1.83, 0]} castShadow>
+        <mesh position={[0, 1.82, 0]} castShadow>
           <sphereGeometry args={[0.27, 20, 14]} />
           <meshStandardMaterial color="#7a5138" roughness={0.70} />
         </mesh>
-        <mesh position={[0, 0.92, 0.18]} rotation-x={Math.PI / 2}>
-          <torusGeometry args={[0.25, 0.04, 10, 24]} />
-          <meshStandardMaterial color="#d9b86d" metalness={0.68} roughness={0.24} emissive="#7a5b1d" emissiveIntensity={0.25} />
+        <mesh position={[0, 0.95, 0.16]} rotation-x={Math.PI / 2}>
+          <torusGeometry args={[0.24, 0.04, 10, 24]} />
+          <meshStandardMaterial color="#d9b66a" metalness={0.65} roughness={0.25} emissive="#76571c" emissiveIntensity={0.25} />
         </mesh>
       </group>
 
-      <group ref={leftRoot}>{featherSet(-1, leftRefs)}</group>
-      <group ref={rightRoot}>{featherSet(1, rightRefs)}</group>
+      <group ref={leftRoot}>
+        {featherList(-1, leftFeathers)}
+        <mesh position={[-1.45, 0.36, 0.08]} rotation-y={-0.1} scale={[3.1, 0.68, 1]}>
+          <planeGeometry args={[1.6, 1.0]} />
+          <meshStandardMaterial color="#bcd4ee" transparent opacity={0.20} side={THREE.DoubleSide} roughness={0.8} />
+        </mesh>
+      </group>
+
+      <group ref={rightRoot}>
+        {featherList(1, rightFeathers)}
+        <mesh position={[1.45, 0.36, 0.08]} rotation-y={0.1} scale={[3.1, 0.68, 1]}>
+          <planeGeometry args={[1.6, 1.0]} />
+          <meshStandardMaterial color="#bcd4ee" transparent opacity={0.20} side={THREE.DoubleSide} roughness={0.8} />
+        </mesh>
+      </group>
 
       <pointLight
         position={[0, 1.15, 0]}
-        color={boost ? '#7bc9ff' : '#9cc8ff'}
-        intensity={boost ? 2.6 : 0.65}
-        distance={5.5}
+        color={boost ? '#7bcaff' : '#aacfff'}
+        intensity={boost ? 3.2 : 0.55}
+        distance={6}
         decay={2}
       />
     </group>
   );
+}
+
+function AerialClouds() {
+  const flying = useGame((s) => s.flying);
+  const clouds = React.useMemo(() => Array.from({ length: 24 }, (_, i) => ({
+    x: ((i * 83) % 420) - 210,
+    y: 28 + (i % 5) * 11,
+    z: ((i * 47) % 420) - 210,
+    s: 1.4 + (i % 4) * 0.55,
+  })), []);
+  const ref = React.useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    ref.current.visible = flying;
+    ref.current.rotation.y = clock.elapsedTime * 0.003;
+  });
+  return <group ref={ref}>
+    {clouds.map((c, i) => (
+      <group key={i} position={[c.x, c.y, c.z]} scale={[c.s, c.s * 0.55, c.s * 0.85]}>
+        <mesh>
+          <sphereGeometry args={[2.7, 14, 10]} />
+          <meshStandardMaterial color="#f4f8fb" transparent opacity={0.58} roughness={1} depthWrite={false} />
+        </mesh>
+        <mesh position={[2.2, 0.35, 0.15]}>
+          <sphereGeometry args={[2.0, 14, 10]} />
+          <meshStandardMaterial color="#ffffff" transparent opacity={0.48} roughness={1} depthWrite={false} />
+        </mesh>
+        <mesh position={[-2.0, -0.1, 0.22]}>
+          <sphereGeometry args={[1.65, 14, 10]} />
+          <meshStandardMaterial color="#eef4f9" transparent opacity={0.46} roughness={1} depthWrite={false} />
+        </mesh>
+      </group>
+    ))}
+  </group>;
 }
 
 function FlightFX() {
@@ -1870,6 +1931,7 @@ function World() {
     <VehicleEntryGlow />
     <WingedAvatar />
     <FlightFX />
+    <AerialClouds />
     <WeaponShop />
     <WeaponMarker />
     <WeaponModel />
