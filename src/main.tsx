@@ -593,7 +593,12 @@ function Player() {
       const airSpeed = Math.hypot(vel.current.x, vel.current.z, vel.current.y);
       const staminaDrain = dt * (boost ? 6.5 : 2.2);
       const nextEnergy = Math.max(0, s.energy - staminaDrain);
-      if (nextEnergy <= 0) useGame.getState().toggleFlying();
+      if (nextEnergy <= 0) {
+        vel.current.set(0, 0, 0);
+        pos.current.y = 1.05;
+        useGame.setState({ flying: false, playerY: 1.05, energy: 0, toast: 'Flight energy depleted • wings folded.' });
+        return;
+      }
 
       useGame.getState().tick(dt);
       useGame.setState({ playerX: pos.current.x, playerY: pos.current.y, playerZ: pos.current.z, moving: airSpeed > 0.18, sprint: boost, energy: nextEnergy });
