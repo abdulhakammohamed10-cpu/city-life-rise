@@ -1703,21 +1703,33 @@ function FlightFX() {
 }
 
 function AmbientCityMotion() {
-  const dust = React.useMemo(() => Array.from({ length: 120 }, (_, i) => ({ x: ((i * 73) % 280) - 140, y: 0.8 + (i % 9) * 0.45, z: ((i * 41) % 280) - 140 })), []);
+  const flying = useGame((s) => s.flying);
+  const dust = React.useMemo(() => Array.from({ length: 120 }, (_, i) => ({
+    x: ((i * 73) % 280) - 140,
+    y: 0.8 + (i % 9) * 0.45,
+    z: ((i * 41) % 280) - 140
+  })), []);
   const ref = React.useRef<THREE.Points>(null);
   const geometry = React.useMemo(() => {
     const positions = new Float32Array(dust.length * 3);
-    dust.forEach((p, i) => { positions[i * 3] = p.x; positions[i * 3 + 1] = p.y; positions[i * 3 + 2] = p.z; });
+    dust.forEach((p, i) => {
+      positions[i * 3] = p.x;
+      positions[i * 3 + 1] = p.y;
+      positions[i * 3 + 2] = p.z;
+    });
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     return g;
   }, [dust]);
   useFrame((_, dt) => {
     if (!ref.current) return;
+    ref.current.visible = !flying;
     ref.current.rotation.y += dt * 0.003;
     ref.current.position.y = Math.sin(performance.now() * 0.00025) * 0.08;
   });
-  return <points ref={ref} geometry={geometry}><pointsMaterial size={0.045} transparent opacity={0.16} depthWrite={false} /></points>;
+  return <points ref={ref} geometry={geometry}>
+    <pointsMaterial size={0.045} color="#8ea4b7" transparent opacity={0.055} depthWrite={false} />
+  </points>;
 }
 
 function InteriorRoomLight({ x, y, z }: { x: number; y: number; z: number }) {
@@ -1732,27 +1744,12 @@ function InteriorFurniture({ floor }: { floor: number }) {
   if (floor === 0) return <group position-y={y}>
     <mesh position={[-3.5, .65, 2.2]}><boxGeometry args={[5.4, .18, 1.6]} /><meshStandardMaterial color="#795a43" /></mesh>
     <mesh position={[-3.5, .36, 2.2]}><boxGeometry args={[4.5, .38, 1.35]} /><meshStandardMaterial color="#303b42" /></mesh>
-    <mesh position={[3.6, .7, -1.8]}><boxGeometry args={[function AmbientCityMotion() {
-  const flying = useGame((s) => s.flying);
-  const dust = React.useMemo(() => Array.from({ length: 120 }, (_, i) => ({ x: ((i * 73) % 280) - 140, y: 0.8 + (i % 9) * 0.45, z: ((i * 41) % 280) - 140 })), []);
-  const ref = React.useRef<THREE.Points>(null);
-  const geometry = React.useMemo(() => {
-    const positions = new Float32Array(dust.length * 3);
-    dust.forEach((p, i) => { positions[i * 3] = p.x; positions[i * 3 + 1] = p.y; positions[i * 3 + 2] = p.z; });
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    return g;
-  }, [dust]);
-  useFrame((_, dt) => {
-    if (!ref.current) return;
-    ref.current.visible = !flying;
-    ref.current.rotation.y += dt * 0.003;
-    ref.current.position.y = Math.sin(performance.now() * 0.00025) * 0.08;
-  });
-  return <points ref={ref} geometry={geometry}><pointsMaterial size={0.045} color="#8ea4b7" transparent opacity={0.055} depthWrite={false} /></points>;
-}
-
-on={[3.4, .34, 2.0]}><boxGeometry args={[3.1, .35, 1.15]} /><meshStandardMaterial color="#c28b62" /></mesh>
+    <mesh position={[3.6, .7, -1.8]}><boxGeometry args={[2.4, 1.4, 1.3]} /><meshStandardMaterial color="#6d5546" /></mesh>
+    <mesh position={[3.6, 1.55, -1.8]}><boxGeometry args={[1.7, .7, .18]} /><meshStandardMaterial color="#1e272b" emissive="#33444b" emissiveIntensity={.16} /></mesh>
+  </group>;
+  if (floor === 1) return <group position-y={y}>
+    <mesh position={[3.4, .65, 2.0]}><boxGeometry args={[3.8, .18, 1.4]} /><meshStandardMaterial color="#73583e" /></mesh>
+    <mesh position={[3.4, .34, 2.0]}><boxGeometry args={[3.1, .35, 1.15]} /><meshStandardMaterial color="#c28b62" /></mesh>
     <mesh position={[-3.2, 1.0, -2.5]}><boxGeometry args={[1.6, 2.0, .5]} /><meshStandardMaterial color="#4e5d63" /></mesh>
     <mesh position={[-1.7, .9, -2.5]}><cylinderGeometry args={[.6, .6, .14, 16]} /><meshStandardMaterial color="#876047" /></mesh>
   </group>;
